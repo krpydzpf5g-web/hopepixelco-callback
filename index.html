@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-vLhL7CMJ3Oy4uy/9hlV0Y6eLNM7KYr766xGbyBWMwZI='; style-src 'unsafe-inline'; form-action https://github.com; base-uri 'none'">
+<title>HopePixelCo · Finish connecting Etsy</title>
+<style>body{font-family:-apple-system,Segoe UI,Arial,sans-serif;background:#f7f3ec;color:#1d2f4f;max-width:560px;margin:0 auto;padding:32px 18px}
+h1{font-size:24px}p{line-height:1.5}a.btn{display:block;text-align:center;background:#2a8c86;color:#fff;padding:16px;border-radius:12px;font-size:18px;font-weight:700;text-decoration:none;margin:24px 0}
+.err{color:#b4472f;font-weight:700}small{color:#5b6b85}</style></head>
+<body><h1>Finish connecting Etsy</h1><p id="msg">Encrypting…</p><a id="go" class="btn" style="display:none">Finish on GitHub</a>
+<p><small>This page holds no secrets. It encrypts Etsy's one-time code in your browser so only the HopePixelCo Autopilot can read it. The code never appears on GitHub in plain text.</small></p>
+<script>
+(async () => {
+  const OWNER = "krpydzpf5g-web", REPO = "hopepixelco-autopilot";
+  const msg = document.getElementById("msg"), go = document.getElementById("go");
+  const b64u = b => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+  const ub64u = s => Uint8Array.from(atob(s.replace(/-/g,"+").replace(/_/g,"/") + "===".slice((s.length + 3) % 4)), c => c.charCodeAt(0));
+  try {
+    const q = new URLSearchParams(location.search);
+    const code = q.get("code"), state = q.get("state"), err = q.get("error");
+    history.replaceState(null, "", location.pathname);           // wipe the code from the address bar and history
+    if (err) throw new Error("Etsy said: " + err + ". Nothing was connected.");
+    if (!code || !state || state.split(".").length !== 2) throw new Error("This page only works straight after pressing Grant access on Etsy.");
+    const [nonce, pubB64] = state.split(".");
+    const peer = await crypto.subtle.importKey("raw", ub64u(pubB64), {name:"ECDH", namedCurve:"P-256"}, false, []);
+    const eph = await crypto.subtle.generateKey({name:"ECDH", namedCurve:"P-256"}, true, ["deriveBits"]);
+    const ephRaw = await crypto.subtle.exportKey("raw", eph.publicKey);
+    const bits = await crypto.subtle.deriveBits({name:"ECDH", public: peer}, eph.privateKey, 256);
+    const hk = await crypto.subtle.importKey("raw", bits, "HKDF", false, ["deriveKey"]);
+    const key = await crypto.subtle.deriveKey({name:"HKDF", hash:"SHA-256", salt: ephRaw, info: new TextEncoder().encode("hopepixelco-etsy-callback-v1")},
+                                              hk, {name:"AES-GCM", length:256}, false, ["encrypt"]);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = await crypto.subtle.encrypt({name:"AES-GCM", iv}, key, new TextEncoder().encode(JSON.stringify({code, nonce})));
+    const blob = b64u(ephRaw) + "." + b64u(iv) + "." + b64u(ct);
+    const body = "Encrypted Etsy authorization for HopePixelCo Autopilot. Submit this issue; the autopilot reads it once, then erases it.\n\n" + blob;
+    go.href = `https://github.com/${OWNER}/${REPO}/issues/new?title=${encodeURIComponent("Etsy authorization")}&body=${encodeURIComponent(body)}`;
+    go.style.display = "block";
+    msg.textContent = "Done. Tap the button, then tap “Submit new issue” on GitHub. That's the last step.";
+  } catch (e) { msg.className = "err"; msg.textContent = e.message; }
+})();
+</script></body></html>
